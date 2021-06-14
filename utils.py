@@ -1,10 +1,11 @@
 import collections
 from IPython import display
 from matplotlib import pyplot as plt
-from mxnet import autograd, context, gluon, image, init, np, npx
+from mxnet import autograd, context, gluon, image, init, np, npx, nd
 from mxnet.gluon import nn, rnn
 import sys
 from d2l import mxnet as d2l
+#import d2l as d2
 #d2l = sys.modules[__name__]
 
 
@@ -83,6 +84,7 @@ def train_seq2seq(net, data_iter, lr, num_epochs, tgt_vocab, device):
     animator = d2l.Animator(xlabel='epoch', ylabel='loss',
                             xlim=[10, num_epochs])
     for epoch in range(num_epochs):
+        print("Epoch: ", epoch)
         timer = d2l.Timer()
         metric = d2l.Accumulator(2)  # Sum of training loss, no. of tokens
         for batch in data_iter:
@@ -91,6 +93,7 @@ def train_seq2seq(net, data_iter, lr, num_epochs, tgt_vocab, device):
             bos = np.array([tgt_vocab['<bos>']] * Y.shape[0],
                            ctx=device).reshape(-1, 1)
             dec_input = d2l.concat([bos, Y[:, :-1]], 1)  # Teacher forcing
+            
             with autograd.record():
                 Y_hat, _ = net(X, dec_input, X_valid_len)
                 l = loss(Y_hat, Y, Y_valid_len)
@@ -125,7 +128,7 @@ class Seq2SeqEncoder(d2l.Encoder):
         super(Seq2SeqEncoder, self).__init__(**kwargs)
         # Embedding layer
         self.embedding = nn.Embedding(vocab_size, embed_size)
-        self.rnn = rnn.GRU(num_hiddens, num_layers, dropout=dropout)
+        self.rnn = rnn.LSTM(num_hiddens, num_layers, dropout=dropout)
 
     def forward(self, X, *args):
         # The output `X` shape: (`batch_size`, `num_steps`, `embed_size`)
@@ -144,7 +147,7 @@ class Seq2SeqDecoder(d2l.Decoder):
                  dropout=0, **kwargs):
         super(Seq2SeqDecoder, self).__init__(**kwargs)
         self.embedding = nn.Embedding(vocab_size, embed_size)
-        self.rnn = rnn.GRU(num_hiddens, num_layers, dropout=dropout)
+        self.rnn = rnn.LSTM(num_hiddens, num_layers, dropout=dropout)
         self.dense = nn.Dense(vocab_size, flatten=False)
 
     def init_state(self, enc_outputs, *args):
@@ -164,7 +167,6 @@ class Seq2SeqDecoder(d2l.Decoder):
         # `output` shape: (`batch_size`, `num_steps`, `vocab_size`)
         # `state[0]` shape: (`num_layers`, `batch_size`, `num_hiddens`)
         return output, state
-
 
 def predict_seq2seq(net, src_sentence, src_vocab, tgt_vocab, num_steps,
                     device, save_attention_weights=False):
@@ -195,3 +197,58 @@ def predict_seq2seq(net, src_sentence, src_vocab, tgt_vocab, num_steps,
             break
         output_seq.append(pred)
     return ' '.join(tgt_vocab.to_tokens(output_seq)), attention_weight_seq
+
+class AttentionDecoder(d2l.Decoder):
+    """The base attention-based decoder interface."""
+    def __init__(self, **kwargs):
+        super(AttentionDecoder, self).__init__(**kwargs)
+
+    @property
+    def attention_weights(self):
+        raise NotImplementedError
+
+class Seq2SeqAttentionDecoder(AttentionDecoder):
+    def __init__(self, vocab_size, embed_size, num_hiddens, num_layers,
+                 dropout=0, **kwargs):
+        super(Seq2SeqAttentionDecoder, self).__init__(**kwargs)
+        self.attention = d2l.AdditiveAttention(num_hiddens, dropout)
+        self.embedding = nn.Embedding(vocab_size, embed_size)
+        self.rnn = rnn.LSTM(num_hiddens, num_layers, dropout=dropout)
+        self.dense = nn.Dense(vocab_size, flatten=False)
+
+    def init_state(self, enc_outputs, enc_valid_lens, *args):
+        # Shape of `outputs`: (`num_steps`, `batch_size`, `num_hiddens`).
+        # Shape of `hidden_state[0]`: (`num_layers`, `batch_size`,
+        # `num_hiddens`)
+        outputs, hidden_state = enc_outputs
+        return (outputs.swapaxes(0, 1), hidden_state, enc_valid_lens)
+
+    def forward(self, X, state):
+        # Shape of `enc_outputs`: (`batch_size`, `num_steps`, `num_hiddens`).
+        # Shape of `hidden_state[0]`: (`num_layers`, `batch_size`,
+        # `num_hiddens`)
+        enc_outputs, hidden_state, enc_valid_lens = state
+        # Shape of the output `X`: (`num_steps`, `batch_size`, `embed_size`)
+        X = self.embedding(X).swapaxes(0, 1)
+        outputs, self._attention_weights = [], []
+        for x in X:
+            # Shape of `query`: (`batch_size`, 1, `num_hiddens`)
+            query = np.expand_dims(hidden_state[0][-1], axis=1)
+            # Shape of `context`: (`batch_size`, 1, `num_hiddens`)
+            context = self.attention(query, enc_outputs, enc_outputs,
+                                     enc_valid_lens)
+            # Concatenate on the feature dimension
+            x = np.concatenate((context, np.expand_dims(x, axis=1)), axis=-1)
+            # Reshape `x` as (1, `batch_size`, `embed_size` + `num_hiddens`)
+            out, hidden_state = self.rnn(x.swapaxes(0, 1), hidden_state)
+            outputs.append(out)
+            self._attention_weights.append(self.attention.attention_weights)
+        # After fully-connected layer transformation, shape of `outputs`:
+        # (`num_steps`, `batch_size`, `vocab_size`)
+        outputs = self.dense(np.concatenate(outputs, axis=0))
+        return outputs.swapaxes(0, 1), [
+            enc_outputs, hidden_state, enc_valid_lens]
+
+    @property
+    def attention_weights(self):
+        return self._attention_weights

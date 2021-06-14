@@ -1,26 +1,27 @@
 import os
-from mxnet import np, npx
+from mxnet import np, npx, init
+import mxnet as mx
 #from d2l import mxnet as d2l
 import utils
+import gluonnlp as nlp
 
-npx.set_np()
+npx.set_np(shape=True, array=True)
 
 data_dir = './data'
 vocab_size = 10000
 batch_size = 128
 
 def load_data_token(path, fname):
-    post = []
+    # post = []
     # with open('%s/%s.post' % (path, fname)) as f:
     #     for line in f:
-    #         #tmp = line.strip().split("\t")
-    #         tmp = line.strip().split()
+    #         tmp = line.strip().split("\t")
     #         post.append([p.lower().split() for p in tmp])
 
-    with open('%s/%s.post' % (path, fname)) as f:
+    with open('%s/%s.post' % (path, fname), encoding="latin1") as f:
         post = [line.strip().lower().split() for line in f.readlines()]
 
-    with open('%s/%s.response' % (path, fname)) as f:
+    with open('%s/%s.response' % (path, fname), encoding="latin1") as f:
         response = [line.strip().lower().split() for line in f.readlines()]
     # data = []
     # for p, r in zip(post, response):
@@ -36,31 +37,29 @@ def truncate_pad(line, num_steps, padding_token):
 
 def build_array_nmt(lines, vocab, num_steps):
     """Transform text sequences of machine translation into minibatches."""
-    if isinstance(lines[0][0], list):
-        lines = [token for line in lines for token in line]
     lines = [vocab[l] for l in lines]
     lines = [l + [vocab['<eos>']] for l in lines]
     array = np.array([
         truncate_pad(l, num_steps, vocab['<pad>']) for l in lines])
 
-    if (len(array) > 10000):
-        valid_len = (array[0:10000] != vocab['<pad>']).astype(np.int32).sum(1)
-    else:
-        valid_len = (array != vocab['<pad>']).astype(np.int32).sum(1)
+    valid_len = (array != vocab['<pad>']).astype(np.int32).sum(1)
+
     return array, valid_len
 
 def load_data_nmt(batch_size, num_steps, num_examples=600):
     """Return the iterator and the vocabularies of the translation dataset."""
     source, target = load_data_token(data_dir, 'train')
-    src_vocab = utils.Vocab(source, min_freq=2,
-                          reserved_tokens=['<pad>', '<bos>', '<eos>'])
-    tgt_vocab = utils.Vocab(target, min_freq=2,
-                          reserved_tokens=['<pad>', '<bos>', '<eos>'])
-    src_array, src_valid_len = build_array_nmt(source, src_vocab, num_steps)
-    tgt_array, tgt_valid_len = build_array_nmt(target, tgt_vocab, num_steps)
+    #Vocabulário único
+    vocab = utils.Vocab(source + target, min_freq=5,
+                          reserved_tokens=['<pad>', '<bos>', '<eos>', '<unk>'])
+
+    #tgt_vocab = utils.Vocab(target, min_freq=5,
+    #                     reserved_tokens=['<pad>', '<bos>', '<eos>', '<unk>'])
+    src_array, src_valid_len = build_array_nmt(source, vocab, num_steps)
+    tgt_array, tgt_valid_len = build_array_nmt(target, vocab, num_steps)
     data_arrays = (src_array, src_valid_len, tgt_array, tgt_valid_len)
     data_iter = utils.load_array(data_arrays, batch_size)
-    return data_iter, src_vocab, tgt_vocab
+    return data_iter, vocab, vocab
 
 #source, target = load_data_token(data_dir, 'train')
 #print(len(source))
@@ -80,23 +79,28 @@ def load_data_nmt(batch_size, num_steps, num_examples=600):
 #     print('valid lengths for Y:', Y_valid_len)
 #     break
 
-embed_size, num_hiddens, num_layers, dropout = 32, 32, 2, 0.1
-batch_size, num_steps = 128, 10
-lr, num_epochs, device = 0.005, 20, utils.try_gpu()
+embed_size, num_hiddens, num_layers, dropout = 200, 32, 2, 0.1
+batch_size, num_steps = 128, 60
+lr, num_epochs, device = 0.005, 1, utils.try_gpu()
 
 train_iter, src_vocab, tgt_vocab = load_data_nmt(batch_size, num_steps)
 encoder = utils.Seq2SeqEncoder(len(src_vocab), embed_size, num_hiddens, num_layers,
                          dropout)
-decoder = utils.Seq2SeqDecoder(len(tgt_vocab), embed_size, num_hiddens, num_layers,
-                         dropout)
+encoder.initialize(init.Xavier())
+glove_6b200d = nlp.embedding.create('glove', source='glove.6B.200d')
+encoder.embedding.weight.set_data(glove_6b200d.idx_to_vec[:len(src_vocab)].as_np_ndarray())
+
+
+decoder = utils.Seq2SeqAttentionDecoder(len(tgt_vocab), embed_size, num_hiddens, num_layers, dropout)
+
 net = utils.EncoderDecoder(encoder, decoder)
 
 utils.train_seq2seq(net, train_iter, lr, num_epochs, tgt_vocab, device)
-src_sentence = "Donald was walking around the lake ."
+src_sentence = "Martha is cooking a special meal for her family .	She wants everything to be just right for when they eat .	Martha perfects everything and puts her dinner into the oven .	Martha goes to lay down for a quick nap ."
 output, attention_weights = utils.predict_seq2seq(net, src_sentence, src_vocab, tgt_vocab, num_steps,
-                    device, save_attention_weights=False)
-print(src_sentence)
-print(output)
+                    device, save_attention_weights=True)
+print("sentence", src_sentence)
+print("saida:", output)
 
 
 
