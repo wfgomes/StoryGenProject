@@ -5,6 +5,7 @@ from mxnet import autograd, context, gluon, image, init, np, npx, nd
 from mxnet.gluon import nn, rnn
 import sys
 from d2l import mxnet as d2l
+import numpy as npy
 #import d2l as d2
 #d2l = sys.modules[__name__]
 
@@ -88,15 +89,22 @@ def train_seq2seq(net, data_iter, lr, num_epochs, tgt_vocab, device):
         timer = d2l.Timer()
         metric = d2l.Accumulator(2)  # Sum of training loss, no. of tokens
         for batch in data_iter:
-            X, X_valid_len, Y, Y_valid_len = [
-                x.as_in_ctx(device) for x in batch]
+            X1, X1_valid_len, X2, X2_valid_len, X3, X3_valid_len, X4, X4_valid_len, Y, Y_valid_len = [x.as_in_ctx(device) for x in batch]
             bos = np.array([tgt_vocab['<bos>']] * Y.shape[0],
                            ctx=device).reshape(-1, 1)
             dec_input = d2l.concat([bos, Y[:, :-1]], 1)  # Teacher forcing
             
             with autograd.record():
-                Y_hat, _ = net(X, dec_input, X_valid_len)
-                l = loss(Y_hat, Y, Y_valid_len)
+                Y_hat1, st1 = net(X1, dec_input, X1_valid_len)
+                l1 = loss(Y_hat1, X2, X2_valid_len)
+                Y_hat2, st2 = net(X2, dec_input, X2_valid_len)
+                l2 = loss(Y_hat2, X3, X3_valid_len)
+                Y_hat3, st3 = net(X3, dec_input, X3_valid_len)
+                l3 = loss(Y_hat3, X4, X4_valid_len)
+                Y_hat4, st4 = net(X4, dec_input, X4_valid_len)
+                l4 = loss(Y_hat4, Y, Y_valid_len)
+                l = l1 + l2 + l3 + l4
+
             l.backward()
             d2l.grad_clipping(net, 1)
             num_tokens = Y_valid_len.sum()
