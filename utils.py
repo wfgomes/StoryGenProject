@@ -92,16 +92,19 @@ def train_seq2seq(net, data_iter, lr, num_epochs, tgt_vocab, device):
             X1, X1_valid_len, X2, X2_valid_len, X3, X3_valid_len, X4, X4_valid_len, Y, Y_valid_len = [x.as_in_ctx(device) for x in batch]
             bos = np.array([tgt_vocab['<bos>']] * Y.shape[0],
                            ctx=device).reshape(-1, 1)
-            dec_input = d2l.concat([bos, Y[:, :-1]], 1)  # Teacher forcing
-            
+            dec_input1 = d2l.concat([bos, X1[:, :-1]], 1)
+            dec_input2 = d2l.concat([bos, X2[:, :-1]], 1)
+            dec_input3 = d2l.concat([bos, X3[:, :-1]], 1)
+            dec_input4 = d2l.concat([bos, X4[:, :-1]], 1)
+
             with autograd.record():
-                Y_hat1, st1 = net(X1, dec_input, X1_valid_len)
-                l1 = loss(Y_hat1, X2, X2_valid_len)
-                Y_hat2, st2 = net(X2, dec_input, X2_valid_len)
-                l2 = loss(Y_hat2, X3, X3_valid_len)
-                Y_hat3, st3 = net(X3, dec_input, X3_valid_len)
-                l3 = loss(Y_hat3, X4, X4_valid_len)
-                Y_hat4, st4 = net(X4, dec_input, X4_valid_len)
+                Y_hat1, st1 = net(X1, dec_input1, X1_valid_len)
+                l1 = loss(Y_hat1, Y, Y_valid_len)
+                Y_hat2, st2 = net(X2, dec_input2, X2_valid_len)
+                l2 = loss(Y_hat2, Y, Y_valid_len)
+                Y_hat3, st3 = net(X3, dec_input3, X3_valid_len)
+                l3 = loss(Y_hat3, Y, Y_valid_len)
+                Y_hat4, st4 = net(X4, dec_input4, X4_valid_len)
                 l4 = loss(Y_hat4, Y, Y_valid_len)
                 l = l1 + l2 + l3 + l4
 
