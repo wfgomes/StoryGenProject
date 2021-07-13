@@ -76,7 +76,7 @@ class MaskedSoftmaxCELoss(gluon.loss.SoftmaxCELoss):
         weights = npx.sequence_mask(weights, valid_len, True, axis=1)
         return super(MaskedSoftmaxCELoss, self).forward(pred, label, weights)
 
-def train_seq2seq(net, data_iter, lr, num_epochs, tgt_vocab, device):
+def train_seq2seq(net, data_iter, test_iter, lr, num_epochs, tgt_vocab, device):
     """Train a model for sequence to sequence."""
     net.initialize(init.Xavier(), force_reinit=True, ctx=device)
     trainer = gluon.Trainer(net.collect_params(), 'adam',
@@ -113,10 +113,11 @@ def train_seq2seq(net, data_iter, lr, num_epochs, tgt_vocab, device):
             num_tokens = Y_valid_len.sum()
             trainer.step(num_tokens)
             metric.add(l.sum(), num_tokens)
+        test_acc = evaluate_accuracy_gpu(net, test_iter, device)
         if (epoch + 1) % 10 == 0:
             animator.add(epoch + 1, (metric[0] / metric[1],))
     print(f'loss {metric[0] / metric[1]:.3f}, {metric[1] / timer.stop():.1f} '
-          f'tokens/sec on {str(device)}')
+          f'tokens/sec on {str(device)}', f'test acc {test_acc:.3f}')
 
 class EncoderDecoder(nn.Block):
     """The base class for the encoder-decoder architecture."""
@@ -263,3 +264,15 @@ class Seq2SeqAttentionDecoder(AttentionDecoder):
     @property
     def attention_weights(self):
         return self._attention_weights
+
+
+def evaluate_accuracy_gpu(net, data_iter, device=None):
+    """Compute the accuracy for a model on a dataset using a GPU."""
+    if not device:  # Query the first device where the first parameter is on
+        device = list(net.collect_params().values())[0].list_ctx()[0]
+    # No. of correct predictions, no. of predictions
+    metric = d2l.Accumulator(2)
+    for X, y in data_iter:
+        X, y = X.as_in_ctx(device), y.as_in_ctx(device)
+        metric.add(d2l.accuracy(net(X), y), d2l.size(y))
+    return metric[0] / metric[1]

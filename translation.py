@@ -16,17 +16,8 @@ def load_data_token(path, fname):
     post2 = []
     post3 = []
     post4 = []
-    # with open('%s/%s.post' % (path, fname)) as f:
-    #     for line in f:
-    #         tmp = line.strip().split("\t")
-    #         #post1.append([p.lower().split() for p in tmp])
-    #         post1 = [l.strip().lower().split() for l in tmp[0]]
 
     with open('%s/%s.post' % (path, fname), encoding="latin1") as f:
-        # post1 = [line.strip().lower().split("\t")[0].split() for line in f.readlines()]
-        # post2 = [line.strip().lower().split("\t")[1].split() for line in f.readlines()]
-        # post3 = [line.strip().lower().split("\t")[2].split() for line in f.readlines()]
-        # post4 = [line.strip().lower().split("\t")[3].split() for line in f.readlines()]
         for line in f.readlines():
             l = line.strip().lower().split("\t")
             post1.append([l[0]])
@@ -36,9 +27,6 @@ def load_data_token(path, fname):
 
     with open('%s/%s.response' % (path, fname), encoding="latin1") as f:
         response = [line.strip().lower().split() for line in f.readlines()]
-    # data = []
-    # for p, r in zip(post, response):
-    #     data.append({'post': p, 'response': r})
 
     return post1, post2, post3, post4, response
 
@@ -62,6 +50,7 @@ def build_array_nmt(lines, vocab, num_steps):
 def load_data_nmt(batch_size, num_steps, num_examples=600):
     """Return the iterator and the vocabularies of the translation dataset."""
     source1, source2, source3, source4, target = load_data_token(data_dir, 'train')
+    test1, test2, test3, test4, test_tg = load_data_token(data_dir, 'test')
     #Vocabulário único
     vocab = utils.Vocab(source1 + source2 + source3 + source4 + target, min_freq=5,
                           reserved_tokens=['<pad>', '<bos>', '<eos>', '<unk>'])
@@ -74,32 +63,24 @@ def load_data_nmt(batch_size, num_steps, num_examples=600):
     src_array4, src_valid_len4 = build_array_nmt(source4, vocab, num_steps)
     tgt_array, tgt_valid_len = build_array_nmt(target, vocab, num_steps)
     data_arrays = (src_array1, src_valid_len1, src_array2, src_valid_len2, src_array3, src_valid_len3, src_array4, src_valid_len4, tgt_array, tgt_valid_len)
-    data_iter = utils.load_array(data_arrays, batch_size, is_train=False)
-    return data_iter, vocab, vocab
+    data_iter = utils.load_array(data_arrays, batch_size, is_train=True)
 
-#source, target = load_data_token(data_dir, 'train')
-#print(len(source))
-#exit()
-#src_vocab = utils.Vocab(source, min_freq=5, reserved_tokens=['<pad>', '<bos>', '<eos>'])
+    src_array1t, src_valid_len1t = build_array_nmt(test1, vocab, num_steps)
+    src_array2t, src_valid_len2t = build_array_nmt(test2, vocab, num_steps)
+    src_array3t, src_valid_len3t = build_array_nmt(test3, vocab, num_steps)
+    src_array4t, src_valid_len4t = build_array_nmt(test4, vocab, num_steps)
+    tgt_arrayt, tgt_valid_lent = build_array_nmt(test_tg, vocab, num_steps)
+    data_arrayst = (src_array1t, src_valid_len1t, src_array2t, src_valid_len2t, src_array3t, src_valid_len3t, src_array4t, src_valid_len4t,
+    tgt_arrayt, tgt_valid_lent)
+    test_iter = utils.load_array(data_arrayst, batch_size, is_train=False)
 
-#encoder_len = [max([len(item[i]) for item in source]) + 1 for i in range(4)]
-#decoder_len = max([len(item) for item in target]) + 1
-
-
-#train_iter, src_vocab, tgt_vocab = load_data_nmt(batch_size=2, num_steps=8)
-
-# for X, X_valid_len, Y, Y_valid_len in train_iter:
-#     print('X:', X.astype(np.int32))
-#     print('valid lengths for X:', X_valid_len)
-#     print('Y:', Y.astype(np.int32))
-#     print('valid lengths for Y:', Y_valid_len)
-#     break
+    return data_iter, test_iter, vocab, vocab
 
 embed_size, num_hiddens, num_layers, dropout = 200, 512, 2, 0.1
 batch_size, num_steps = 128, 12
-lr, num_epochs, device = 0.005, 20, utils.try_gpu()
+lr, num_epochs, device = 0.005, 1, utils.try_gpu()
 
-train_iter, src_vocab, tgt_vocab = load_data_nmt(batch_size, num_steps)
+train_iter, test_iter, src_vocab, tgt_vocab = load_data_nmt(batch_size, num_steps)
 encoder = utils.Seq2SeqEncoder(len(src_vocab), embed_size, num_hiddens, num_layers,
                          dropout)
 encoder.initialize(init.Xavier())
@@ -111,7 +92,7 @@ decoder = utils.Seq2SeqAttentionDecoder(len(tgt_vocab), embed_size, num_hiddens,
 
 net = utils.EncoderDecoder(encoder, decoder)
 
-utils.train_seq2seq(net, train_iter, lr, num_epochs, tgt_vocab, device)
+utils.train_seq2seq(net, train_iter, test_iter, lr, num_epochs, tgt_vocab, device)
 
 sentence1 = "My wife is collecting unemployment insurance .	The state required that she meet with a counselor .	She had to show her resume and work search logs .	My wife dreaded the meeting ."
 resposta1 = "She went and said it was actually not all that bad ."
@@ -122,24 +103,32 @@ resposta2 = "Lucy was thrilled ."
 sentence3 = "I was reading the novel Vanity Fair last week .	My wife was out food shopping .	She texted me asking if I wanted beer or ale .	I said any ale , but texted her later asking for English beer ."
 resposta3 = "Unfortunately she did get the text and I got domestic beer ."
 
-num_steps = 60
-output, attention_weights = utils.predict_seq2seq(net, sentence1, src_vocab, tgt_vocab, num_steps,
+sentence4 = "Donald was walking around the lake .	He saw a duck swimming in it .	The duck paddled silently through the water .	When he was at the other side , he climbed out ."
+resposta4 = "Donald loved watching the duck in nature ."
+
+output1, attention_weights1 = utils.predict_seq2seq(net, sentence1, src_vocab, tgt_vocab, num_steps,
                     device, save_attention_weights=True)
 print("sentence: ", sentence1)
 print("resposta: ", resposta1)
-print("saida: ", output)
+print("saida: ", output1)
 
-output, attention_weights = utils.predict_seq2seq(net, sentence2, src_vocab, tgt_vocab, num_steps,
+output2, attention_weights2 = utils.predict_seq2seq(net, sentence2, src_vocab, tgt_vocab, num_steps,
                     device, save_attention_weights=True)
 print("sentence", sentence2)
 print("resposta: ", resposta2)
-print("saida:", output)
+print("saida:", output2)
 
-output, attention_weights = utils.predict_seq2seq(net, sentence3, src_vocab, tgt_vocab, num_steps,
+output3, attention_weights3 = utils.predict_seq2seq(net, sentence3, src_vocab, tgt_vocab, num_steps,
                     device, save_attention_weights=True)
 print("sentence", sentence3)
 print("resposta: ", resposta3)
-print("saida:", output)
+print("saida:", output3)
+
+output4, attention_weights4 = utils.predict_seq2seq(net, sentence4, src_vocab, tgt_vocab, num_steps,
+                    device, save_attention_weights=True)
+print("sentence", sentence4)
+print("resposta: ", resposta4)
+print("saida:", output4)
 
 
 
