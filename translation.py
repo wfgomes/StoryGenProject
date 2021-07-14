@@ -87,27 +87,27 @@ resposta4 = "Donald loved watching the duck in nature ."
 num_steps = 15
 output1, attention_weights1 = utils.predict_seq2seq(net, sentence1, src_vocab, tgt_vocab, num_steps,
                     device, save_attention_weights=True)
-print("sentence: ", sentence1)
-print("resposta: ", resposta1)
-print("saida: ", output1)
-
+print("História: ", sentence1)
+print("Final Dataset: ", resposta1)
+print("Final Gerado: ", output1)
+print(" ")
 output2, attention_weights2 = utils.predict_seq2seq(net, sentence2, src_vocab, tgt_vocab, num_steps,
                     device, save_attention_weights=True)
-print("sentence", sentence2)
-print("resposta: ", resposta2)
-print("saida:", output2)
-
+print("História: ", sentence2)
+print("Final Dataset: ", resposta2)
+print("Final Gerado: ", output2)
+print(" ")
 output3, attention_weights3 = utils.predict_seq2seq(net, sentence3, src_vocab, tgt_vocab, num_steps,
                     device, save_attention_weights=True)
-print("sentence", sentence3)
-print("resposta: ", resposta3)
-print("saida:", output3)
-
+print("História: ", sentence3)
+print("Final Dataset: ", resposta3)
+print("Final Gerado: ", output3)
+print(" ")
 output4, attention_weights4 = utils.predict_seq2seq(net, sentence4, src_vocab, tgt_vocab, num_steps,
                     device, save_attention_weights=True)
-print("sentence", sentence4)
-print("resposta: ", resposta4)
-print("saida:", output4)
+print("História: ", sentence4)
+print("Final Dataset: ", resposta4)
+print("Final Gerado: ", output4)
 
 
 
