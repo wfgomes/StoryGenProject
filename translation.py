@@ -12,23 +12,14 @@ vocab_size = 10000
 batch_size = 128
 
 def load_data_token(path, fname):
-    post1 = []
-    post2 = []
-    post3 = []
-    post4 = []
 
     with open('%s/%s.post' % (path, fname), encoding="latin1") as f:
-        for line in f.readlines():
-            l = line.strip().lower().split("\t")
-            post1.append([l[0]])
-            post2.append([l[1]])
-            post3.append([l[2]])
-            post4.append([l[3]])
+        post = [line.strip().lower().split() for line in f.readlines()]
 
     with open('%s/%s.response' % (path, fname), encoding="latin1") as f:
         response = [line.strip().lower().split() for line in f.readlines()]
 
-    return post1, post2, post3, post4, response
+    return post, response
 
 def truncate_pad(line, num_steps, padding_token):
     """Truncate or pad sequences."""
@@ -49,38 +40,25 @@ def build_array_nmt(lines, vocab, num_steps):
 
 def load_data_nmt(batch_size, num_steps, num_examples=600):
     """Return the iterator and the vocabularies of the translation dataset."""
-    source1, source2, source3, source4, target = load_data_token(data_dir, 'train')
-    test1, test2, test3, test4, test_tg = load_data_token(data_dir, 'test')
+    source, target = load_data_token(data_dir, 'train')
     #Vocabulário único
-    vocab = utils.Vocab(source1 + source2 + source3 + source4 + target, min_freq=5,
+    vocab = utils.Vocab(source + target, min_freq=5,
                           reserved_tokens=['<pad>', '<bos>', '<eos>', '<unk>'])
 
     #tgt_vocab = utils.Vocab(target, min_freq=5,
     #                     reserved_tokens=['<pad>', '<bos>', '<eos>', '<unk>'])
-    src_array1, src_valid_len1 = build_array_nmt(source1, vocab, num_steps)
-    src_array2, src_valid_len2 = build_array_nmt(source2, vocab, num_steps)
-    src_array3, src_valid_len3 = build_array_nmt(source3, vocab, num_steps)
-    src_array4, src_valid_len4 = build_array_nmt(source4, vocab, num_steps)
+    src_array, src_valid_len = build_array_nmt(source, vocab, num_steps)
     tgt_array, tgt_valid_len = build_array_nmt(target, vocab, num_steps)
-    data_arrays = (src_array1, src_valid_len1, src_array2, src_valid_len2, src_array3, src_valid_len3, src_array4, src_valid_len4, tgt_array, tgt_valid_len)
-    data_iter = utils.load_array(data_arrays, batch_size, is_train=True)
+    data_arrays = (src_array, src_valid_len, tgt_array, tgt_valid_len)
+    data_iter = utils.load_array(data_arrays, batch_size)
 
-    src_array1t, src_valid_len1t = build_array_nmt(test1, vocab, num_steps)
-    src_array2t, src_valid_len2t = build_array_nmt(test2, vocab, num_steps)
-    src_array3t, src_valid_len3t = build_array_nmt(test3, vocab, num_steps)
-    src_array4t, src_valid_len4t = build_array_nmt(test4, vocab, num_steps)
-    tgt_arrayt, tgt_valid_lent = build_array_nmt(test_tg, vocab, num_steps)
-    data_arrayst = (src_array1t, src_valid_len1t, src_array2t, src_valid_len2t, src_array3t, src_valid_len3t, src_array4t, src_valid_len4t,
-    tgt_arrayt, tgt_valid_lent)
-    test_iter = utils.load_array(data_arrayst, batch_size, is_train=False)
-
-    return data_iter, test_iter, vocab, vocab
+    return data_iter, vocab, vocab
 
 embed_size, num_hiddens, num_layers, dropout = 200, 512, 2, 0.1
-batch_size, num_steps = 128, 12
-lr, num_epochs, device = 0.005, 1, utils.try_gpu()
+batch_size, num_steps = 128, 60
+lr, num_epochs, device = 0.005, 30, utils.try_gpu()
 
-train_iter, test_iter, src_vocab, tgt_vocab = load_data_nmt(batch_size, num_steps)
+train_iter, src_vocab, tgt_vocab = load_data_nmt(batch_size, num_steps)
 encoder = utils.Seq2SeqEncoder(len(src_vocab), embed_size, num_hiddens, num_layers,
                          dropout)
 encoder.initialize(init.Xavier())
@@ -92,7 +70,7 @@ decoder = utils.Seq2SeqAttentionDecoder(len(tgt_vocab), embed_size, num_hiddens,
 
 net = utils.EncoderDecoder(encoder, decoder)
 
-utils.train_seq2seq(net, train_iter, test_iter, lr, num_epochs, tgt_vocab, device)
+utils.train_seq2seq(net, train_iter, lr, num_epochs, tgt_vocab, device)
 
 sentence1 = "My wife is collecting unemployment insurance .	The state required that she meet with a counselor .	She had to show her resume and work search logs .	My wife dreaded the meeting ."
 resposta1 = "She went and said it was actually not all that bad ."
@@ -106,6 +84,7 @@ resposta3 = "Unfortunately she did get the text and I got domestic beer ."
 sentence4 = "Donald was walking around the lake .	He saw a duck swimming in it .	The duck paddled silently through the water .	When he was at the other side , he climbed out ."
 resposta4 = "Donald loved watching the duck in nature ."
 
+num_steps = 15
 output1, attention_weights1 = utils.predict_seq2seq(net, sentence1, src_vocab, tgt_vocab, num_steps,
                     device, save_attention_weights=True)
 print("sentence: ", sentence1)

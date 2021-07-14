@@ -76,7 +76,7 @@ class MaskedSoftmaxCELoss(gluon.loss.SoftmaxCELoss):
         weights = npx.sequence_mask(weights, valid_len, True, axis=1)
         return super(MaskedSoftmaxCELoss, self).forward(pred, label, weights)
 
-def train_seq2seq(net, data_iter, test_iter, lr, num_epochs, tgt_vocab, device):
+def train_seq2seq(net, data_iter, lr, num_epochs, tgt_vocab, device):
     """Train a model for sequence to sequence."""
     net.initialize(init.Xavier(), force_reinit=True, ctx=device)
     trainer = gluon.Trainer(net.collect_params(), 'adam',
@@ -89,35 +89,24 @@ def train_seq2seq(net, data_iter, test_iter, lr, num_epochs, tgt_vocab, device):
         timer = d2l.Timer()
         metric = d2l.Accumulator(2)  # Sum of training loss, no. of tokens
         for batch in data_iter:
-            X1, X1_valid_len, X2, X2_valid_len, X3, X3_valid_len, X4, X4_valid_len, Y, Y_valid_len = [x.as_in_ctx(device) for x in batch]
+            X, X_valid_len, Y, Y_valid_len = [x.as_in_ctx(device) for x in batch]
             bos = np.array([tgt_vocab['<bos>']] * Y.shape[0],
                            ctx=device).reshape(-1, 1)
-            dec_input1 = d2l.concat([bos, X1[:, :-1]], 1)
-            dec_input2 = d2l.concat([bos, X2[:, :-1]], 1)
-            dec_input3 = d2l.concat([bos, X3[:, :-1]], 1)
-            dec_input4 = d2l.concat([bos, X4[:, :-1]], 1)
+            dec_input = d2l.concat([bos, Y[:, :-1]], 1)
 
             with autograd.record():
-                Y_hat1, st1 = net(X1, dec_input1, X1_valid_len)
-                l1 = loss(Y_hat1, Y, Y_valid_len)
-                Y_hat2, st2 = net(X2, dec_input2, X2_valid_len)
-                l2 = loss(Y_hat2, Y, Y_valid_len)
-                Y_hat3, st3 = net(X3, dec_input3, X3_valid_len)
-                l3 = loss(Y_hat3, Y, Y_valid_len)
-                Y_hat4, st4 = net(X4, dec_input4, X4_valid_len)
-                l4 = loss(Y_hat4, Y, Y_valid_len)
-                l = l1 + l2 + l3 + l4
+                Y_hat, _ = net(X, dec_input, X_valid_len)
+                l = loss(Y_hat, Y, Y_valid_len)
 
             l.backward()
             d2l.grad_clipping(net, 1)
             num_tokens = Y_valid_len.sum()
             trainer.step(num_tokens)
             metric.add(l.sum(), num_tokens)
-        test_acc = evaluate_accuracy_gpu(net, test_iter, device)
         if (epoch + 1) % 10 == 0:
             animator.add(epoch + 1, (metric[0] / metric[1],))
     print(f'loss {metric[0] / metric[1]:.3f}, {metric[1] / timer.stop():.1f} '
-          f'tokens/sec on {str(device)}', f'test acc {test_acc:.3f}')
+          f'tokens/sec on {str(device)}')
 
 class EncoderDecoder(nn.Block):
     """The base class for the encoder-decoder architecture."""
